@@ -1,0 +1,11 @@
+# Change Summary
+
+## [2026-03-18] - Supabase Google OAuth & Admin Guard Implementation
+- Installed `@supabase/supabase-js` and `@supabase/ssr`.
+- Created Supabase utilities: `utils/supabase/client.ts`, `utils/supabase/server.ts`, and `utils/supabase/middleware.ts`.
+- Implemented `/login` page with high-contrast retro style and Google OAuth integration.
+- Created `app/auth/callback/route.ts` for OAuth code exchange.
+- Added root `middleware.ts` for session refreshing and route protection.
+- Refactored `app/page.tsx` to include an Admin Guard (Server Component).
+- Moved dashboard UI to `app/MatrixDashboardClient.tsx`.
+- Added 'Terminate Session' (Sign Out) functionality to the dashboard.
