@@ -97,7 +97,7 @@ const StepCard = ({ step, isDarkMode, onMove, onDelete }: StepCardProps) => {
 };
 
 export default function MatrixDashboardClient() {
-  const { isAdmin, loading: adminLoading } = useAdmin();
+  const { isAdmin, loading: adminLoading, user } = useAdmin();
   const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [selectedFlavor, setSelectedFlavor] = useState<Flavor | null>(null);
   const [steps, setSteps] = useState<FlavorStep[]>([]);
@@ -184,12 +184,18 @@ export default function MatrixDashboardClient() {
     // Database Sync: Swap the order_by values
     const { error: error1 } = await supabase
       .from("humor_flavor_steps")
-      .update({ order_by: neighborOrderBy })
+      .update({ 
+        order_by: neighborOrderBy,
+        modified_by_user_id: user?.id 
+      })
       .eq("id", currentStep.id);
 
     const { error: error2 } = await supabase
       .from("humor_flavor_steps")
-      .update({ order_by: currentOrderBy })
+      .update({ 
+        order_by: currentOrderBy,
+        modified_by_user_id: user?.id 
+      })
       .eq("id", neighborStep.id);
 
     if (error1 || error2) {
@@ -205,7 +211,12 @@ export default function MatrixDashboardClient() {
 
     const { data, error } = await supabase
       .from("humor_flavors")
-      .insert([{ slug, description: "NEWLY_INITIALIZED_FLAVOR" }])
+      .insert([{ 
+        slug, 
+        description: "NEWLY_INITIALIZED_FLAVOR",
+        created_by_user_id: user?.id,
+        modified_by_user_id: user?.id
+      }])
       .select()
       .single();
 
@@ -241,7 +252,9 @@ export default function MatrixDashboardClient() {
       order_by: steps.length + 1,
       description: "NEW_ANALYSIS_STEP",
       llm_system_prompt: "You are a helpful assistant.",
-      llm_user_prompt: "Describe this image."
+      llm_user_prompt: "Describe this image.",
+      created_by_user_id: user?.id,
+      modified_by_user_id: user?.id
     };
 
     const { data, error } = await supabase

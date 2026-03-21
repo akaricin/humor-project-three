@@ -3,6 +3,7 @@ import { createClient } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 
 export function useAdmin() {
+  const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -11,6 +12,7 @@ export function useAdmin() {
   useEffect(() => {
     async function checkAdmin() {
       const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
       if (!user) {
         setIsAdmin(false)
         setLoading(false)
@@ -36,5 +38,5 @@ export function useAdmin() {
     checkAdmin()
   }, [supabase, router])
 
-  return { isAdmin, loading }
+  return { isAdmin, loading, user }
 }
