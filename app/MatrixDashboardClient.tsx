@@ -12,7 +12,8 @@ import {
   ShieldAlert,
   LogOut,
   Loader2,
-  Zap
+  Zap,
+  Copy
 } from "lucide-react";
 import { createClient } from "../lib/supabase";
 import { useRouter } from "next/navigation";
@@ -101,12 +102,33 @@ export default function MatrixDashboardClient() {
   const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [selectedFlavor, setSelectedFlavor] = useState<Flavor | null>(null);
   const [steps, setSteps] = useState<FlavorStep[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"FLAVOR_EDITOR" | "GRID_LAB">("FLAVOR_EDITOR");
+  const [duplicationModal, setDuplicationModal] = useState<{ isOpen: boolean; originalFlavor: Flavor | null; newSlug: string; newDescription: string }>({
+    isOpen: false,
+    originalFlavor: null,
+    newSlug: "",
+    newDescription: ""
+  });
+  const [newFlavorModal, setNewFlavorModal] = useState<{ isOpen: boolean; slug: string }>({
+    isOpen: false,
+    slug: ""
+  });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
+  const [toasts, setToasts] = useState<{ id: number; message: string; type: "SUCCESS" | "ERROR" }[]>([]);
   
   const supabase = createClient();
   const router = useRouter();
+
+  const showToast = (message: string, type: "SUCCESS" | "ERROR" = "SUCCESS") => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
 
   // Detect System Preference on Mount
   useEffect(() => {
@@ -206,7 +228,11 @@ export default function MatrixDashboardClient() {
   };
 
   const insertFlavor = async () => {
-    const slug = prompt("Enter Flavor SLUG (e.g. SARCASM_V2):");
+    setNewFlavorModal({ isOpen: true, slug: "" });
+  };
+
+  const confirmInsertFlavor = async () => {
+    const { slug } = newFlavorModal;
     if (!slug) return;
 
     const { data, error } = await supabase
@@ -223,20 +249,112 @@ export default function MatrixDashboardClient() {
     if (data) {
       setFlavors([...flavors, data]);
       setSelectedFlavor(data);
+      setNewFlavorModal({ isOpen: false, slug: "" });
+      showToast("Flavor Created Successfully!");
+    } else {
+      showToast("Failed to Create Flavor: " + error.message, "ERROR");
+    }
+  };
+
+  const duplicateFlavor = async (originalFlavor: Flavor) => {
+    setDuplicationModal({
+      isOpen: true,
+      originalFlavor,
+      newSlug: `${originalFlavor.slug}-copy`,
+      newDescription: originalFlavor.description || "DUPLICATED_FLAVOR"
+    });
+  };
+
+  const confirmDuplication = async () => {
+    const { originalFlavor, newSlug, newDescription } = duplicationModal;
+    if (!originalFlavor || !newSlug) return;
+
+    try {
+      setLoading(true);
+      // Step 1: Fetch steps from the original flavor
+      const { data: originalSteps, error: fetchError } = await supabase
+        .from("humor_flavor_steps")
+        .select("*")
+        .eq("humor_flavor_id", originalFlavor.id)
+        .order("order_by");
+
+      if (fetchError) throw fetchError;
+
+      // Step 2: Insert new flavor
+      const { data: newFlavor, error: flavorError } = await supabase
+        .from("humor_flavors")
+        .insert([{ 
+          slug: newSlug, 
+          description: newDescription,
+          created_by_user_id: user?.id,
+          modified_by_user_id: user?.id
+        }])
+        .select()
+        .single();
+
+      if (flavorError) throw flavorError;
+      if (!newFlavor) throw new Error("FAILED_TO_CREATE_NEW_FLAVOR");
+
+      // Step 3: Insert steps for the new flavor
+      if (originalSteps && originalSteps.length > 0) {
+        const newSteps = originalSteps.map(step => ({
+          humor_flavor_id: newFlavor.id,
+          humor_flavor_step_type_id: step.humor_flavor_step_type_id,
+          llm_input_type_id: step.llm_input_type_id,
+          llm_model_id: step.llm_model_id,
+          llm_output_type_id: step.llm_output_type_id,
+          llm_system_prompt: step.llm_system_prompt,
+          llm_user_prompt: step.llm_user_prompt,
+          llm_temperature: step.llm_temperature,
+          order_by: step.order_by,
+          description: step.description,
+          created_by_user_id: user?.id,
+          modified_by_user_id: user?.id
+        }));
+
+        const { error: stepsError } = await supabase
+          .from("humor_flavor_steps")
+          .insert(newSteps);
+
+        if (stepsError) throw stepsError;
+      }
+
+      // Success!
+      showToast("Flavor Duplicated Successfully!");
+      setDuplicationModal({ ...duplicationModal, isOpen: false });
+      
+      // Navigate to the new flavor
+      await fetchFlavors();
+      setSelectedFlavor(newFlavor);
+      
+    } catch (error: any) {
+      console.error("DUPLICATION_FAILURE", error);
+      showToast("Duplication Failed: " + error.message, "ERROR");
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteStep = async (stepId: number) => {
-    if (!confirm("CONFIRM_STEP_DELETION?")) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "INIT_DELETION_PROTOCOL",
+      message: "ARE_YOU_SURE_YOU_WANT_TO_TERMINATE_THIS_STEP_SEQUENCE?",
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from("humor_flavor_steps")
+          .delete()
+          .eq("id", stepId);
 
-    const { error } = await supabase
-      .from("humor_flavor_steps")
-      .delete()
-      .eq("id", stepId);
-
-    if (!error) {
-      setSteps(steps.filter(s => s.id !== stepId));
-    }
+        if (!error) {
+          setSteps(steps.filter(s => s.id !== stepId));
+          showToast("Step Terminated Successfully!");
+        } else {
+          showToast("Termination Failed: " + error.message, "ERROR");
+        }
+        setConfirmModal(null);
+      }
+    });
   };
 
   const insertStep = async () => {
@@ -265,9 +383,10 @@ export default function MatrixDashboardClient() {
 
     if (data) {
       setSteps([...steps, data]);
+      showToast("Step Initialized Successfully!");
     } else {
       console.error("FAILED_TO_INSERT_STEP", error);
-      alert("FAILED_TO_CREATE_STEP: " + error.message);
+      showToast("Failed to Create Step: " + error.message, "ERROR");
     }
   };
 
@@ -292,24 +411,39 @@ export default function MatrixDashboardClient() {
       {/* SIDEBAR: Humor Flavors */}
       <aside className={`w-64 border-r-2 flex flex-col shrink-0 ${isDarkMode ? "border-white" : "border-black"}`}>
         
-        <div className={`p-6 border-b-2 flex items-center gap-2 ${isDarkMode ? "border-white" : "border-black"}`}>
-          <Database size={20} />
-          <span className="font-bold tracking-tighter text-xl">FLAVORS</span>
+        <div className={`p-6 border-b-2 flex flex-col gap-4 ${isDarkMode ? "border-white" : "border-black"}`}>
+          <div className="flex items-center gap-2">
+            <Database size={20} />
+            <span className="font-bold tracking-tighter text-xl">FLAVORS</span>
+          </div>
+          <div className="relative">
+            <input 
+              type="text"
+              placeholder="SEARCH_FLAVORS..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`w-full bg-transparent border-2 p-2 text-[10px] font-bold focus:outline-none transition-colors
+                ${isDarkMode ? "border-white/20 focus:border-white placeholder:text-white/30" : "border-black/20 focus:border-black placeholder:text-black/30"}`}
+            />
+          </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-4 space-y-2">
-          {flavors.map((flavor) => (
-            <button
-              key={flavor.id}
-              onClick={() => setSelectedFlavor(flavor)}
-              className={`w-full text-left p-3 text-sm transition-all border-2 flex items-center gap-2 truncate
-                ${selectedFlavor?.id === flavor.id 
-                  ? (isDarkMode ? "bg-white text-black border-white" : "bg-black text-white border-black") 
-                  : (isDarkMode ? "bg-transparent text-white border-transparent hover:border-white/30" : "bg-transparent text-black border-transparent hover:border-black/30")
-                }`}
-            >
-              <Terminal size={14} className="shrink-0" />
-              {flavor.slug}
-            </button>
+          {flavors
+            .filter(f => f.slug.toLowerCase().includes(searchQuery.toLowerCase()))
+            .map((flavor) => (
+            <div key={flavor.id} className="group relative">
+              <button
+                onClick={() => setSelectedFlavor(flavor)}
+                className={`w-full text-left p-3 text-sm transition-all border-2 flex items-center gap-2 truncate
+                  ${selectedFlavor?.id === flavor.id 
+                    ? (isDarkMode ? "bg-white text-black border-white" : "bg-black text-white border-black") 
+                    : (isDarkMode ? "bg-transparent text-white border-transparent hover:border-white/30" : "bg-transparent text-black border-transparent hover:border-black/30")
+                  }`}
+              >
+                <Terminal size={14} className="shrink-0" />
+                <span className="truncate flex-1">{flavor.slug}</span>
+              </button>
+            </div>
           ))}
           <button 
             onClick={insertFlavor}
@@ -387,16 +521,35 @@ export default function MatrixDashboardClient() {
             <>
               {/* FLAVOR STEPS LIST */}
               <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold underline decoration-4 underline-offset-8">
-                    STEPS_FOR: {selectedFlavor?.slug}
-                  </h2>
-                  <button 
-                    onClick={insertStep}
-                    className={`px-4 py-2 border-2 flex items-center gap-2 font-bold text-sm
-                    ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}>
-                    <Plus size={16} /> NEW_STEP
-                  </button>
+                <div className="mb-12 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-bold underline decoration-4 underline-offset-8">
+                      STEPS_FOR:
+                    </h2>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={insertStep}
+                        className={`px-3 py-1 border-2 flex items-center gap-2 font-bold text-[10px] tracking-widest
+                        ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}>
+                        <Plus size={12} /> ADD_STEP
+                      </button>
+                      <button 
+                        onClick={() => selectedFlavor && duplicateFlavor(selectedFlavor)}
+                        className={`px-3 py-1 border-2 flex items-center gap-2 font-bold text-[10px] tracking-widest
+                        ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}>
+                        <Copy size={12} /> DUPLICATE
+                      </button>
+                      <button 
+                        onClick={() => selectedFlavor && router.push(`/flavors/${selectedFlavor.id}/captions`)}
+                        className={`px-3 py-1 border-2 flex items-center gap-2 font-bold text-[10px] tracking-widest
+                        ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}>
+                        <Database size={12} /> CAPTIONS
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-4xl font-black tracking-tighter opacity-80">
+                    {selectedFlavor?.slug}
+                  </div>
                 </div>
 
                 {steps.length === 0 && (
@@ -438,6 +591,191 @@ export default function MatrixDashboardClient() {
           )}
         </main>
       </div>
+
+      {/* NEW FLAVOR MODAL */}
+      {newFlavorModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setNewFlavorModal({ ...newFlavorModal, isOpen: false })}
+          />
+          <div className={`relative w-full max-w-sm border-4 p-8 space-y-8 animate-in fade-in zoom-in duration-200
+            ${isDarkMode ? "bg-black border-white shadow-[16px_16px_0px_0px_rgba(255,255,255,0.2)]" : "bg-white border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,0.1)]"}`}>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 opacity-60">
+                <Plus size={16} />
+                <span className="text-[10px] font-bold tracking-[0.2em]">INITIALIZE_NEW_FLAVOR</span>
+              </div>
+              <h3 className="text-2xl font-black italic uppercase">NEW_MATRIX_ENTRY</h3>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold block tracking-widest uppercase opacity-70">
+                FLAVOR_SLUG
+              </label>
+              <input 
+                type="text"
+                autoFocus
+                value={newFlavorModal.slug}
+                onChange={(e) => setNewFlavorModal({ ...newFlavorModal, slug: e.target.value })}
+                placeholder="ENTER_SLUG (E.G._SARCASM_V3)..."
+                className={`w-full bg-transparent border-2 p-3 text-xs font-bold focus:outline-none
+                  ${isDarkMode ? "border-white/20 focus:border-white" : "border-black/20 focus:border-black"}`}
+              />
+            </div>
+
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setNewFlavorModal({ ...newFlavorModal, isOpen: false })}
+                className={`flex-1 border-2 py-3 text-xs font-bold transition-colors
+                  ${isDarkMode ? "border-white/20 hover:border-white" : "border-black/20 hover:border-black"}`}
+              >
+                ABORT
+              </button>
+              <button 
+                onClick={confirmInsertFlavor}
+                className={`flex-1 border-2 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all
+                  ${isDarkMode 
+                    ? "bg-white text-black border-white hover:bg-white/90" 
+                    : "bg-black text-white border-black hover:bg-black/90"}`}
+              >
+                CREATE_FLAVOR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION MODAL */}
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setConfirmModal(null)}
+          />
+          <div className={`relative w-full max-w-sm border-4 p-8 space-y-6 animate-in fade-in zoom-in duration-200
+            ${isDarkMode ? "bg-black border-white shadow-[16px_16px_0px_0px_rgba(255,255,255,0.2)]" : "bg-white border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,0.1)]"}`}>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-red-500">
+                <ShieldAlert size={16} />
+                <span className="text-[10px] font-bold tracking-[0.2em]">{confirmModal.title}</span>
+              </div>
+              <p className="text-sm font-bold uppercase leading-relaxed">
+                {confirmModal.message}
+              </p>
+            </div>
+
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setConfirmModal(null)}
+                className={`flex-1 border-2 py-3 text-xs font-bold transition-colors
+                  ${isDarkMode ? "border-white/20 hover:border-white" : "border-black/20 hover:border-black"}`}
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className={`flex-1 border-2 py-3 text-xs font-bold transition-all
+                  ${isDarkMode 
+                    ? "bg-red-500 text-white border-red-500 hover:bg-red-600" 
+                    : "bg-red-600 text-white border-red-600 hover:bg-red-700"}`}
+              >
+                TERMINATE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATIONS */}
+      <div className="fixed bottom-8 right-8 z-[100] flex flex-col gap-4">
+        {toasts.map((toast) => (
+          <div 
+            key={toast.id}
+            className={`min-w-[300px] border-4 p-4 font-bold text-xs tracking-widest uppercase flex items-center gap-3 animate-in slide-in-from-right duration-300
+              ${toast.type === "SUCCESS" 
+                ? (isDarkMode ? "bg-white text-black border-white" : "bg-black text-white border-black")
+                : "bg-red-500 text-white border-red-500"}`}
+          >
+            {toast.type === "SUCCESS" ? <Zap size={14} /> : <ShieldAlert size={14} />}
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
+      {/* DUPLICATION MODAL */}
+      {duplicationModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setDuplicationModal({ ...duplicationModal, isOpen: false })}
+          />
+          <div className={`relative w-full max-w-md border-4 p-8 space-y-8 animate-in fade-in zoom-in duration-200
+            ${isDarkMode ? "bg-black border-white shadow-[16px_16px_0px_0px_rgba(255,255,255,0.2)]" : "bg-white border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,0.1)]"}`}>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 opacity-60">
+                <Copy size={16} />
+                <span className="text-[10px] font-bold tracking-[0.2em]">DUPLICATE_FLAVOR_PROTOCOL</span>
+              </div>
+              <h3 className="text-2xl font-black italic uppercase">INIT_CLONE_SEQUENCE</h3>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold block tracking-widest uppercase opacity-70">
+                  NEW_FLAVOR_SLUG
+                </label>
+                <input 
+                  type="text"
+                  value={duplicationModal.newSlug}
+                  onChange={(e) => setDuplicationModal({ ...duplicationModal, newSlug: e.target.value })}
+                  placeholder="ENTER_NEW_SLUG..."
+                  className={`w-full bg-transparent border-2 p-3 text-xs font-bold focus:outline-none
+                    ${isDarkMode ? "border-white/20 focus:border-white" : "border-black/20 focus:border-black"}`}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold block tracking-widest uppercase opacity-70">
+                  NEW_DESCRIPTION
+                </label>
+                <textarea 
+                  value={duplicationModal.newDescription}
+                  onChange={(e) => setDuplicationModal({ ...duplicationModal, newDescription: e.target.value })}
+                  placeholder="ENTER_DESCRIPTION..."
+                  className={`w-full bg-transparent border-2 p-3 text-xs focus:outline-none min-h-[100px] resize-none
+                    ${isDarkMode ? "border-white/20 focus:border-white" : "border-black/20 focus:border-black"}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setDuplicationModal({ ...duplicationModal, isOpen: false })}
+                className={`flex-1 border-2 py-3 text-xs font-bold transition-colors
+                  ${isDarkMode ? "border-white/20 hover:border-white" : "border-black/20 hover:border-black"}`}
+              >
+                ABORT_SEQUENCE
+              </button>
+              <button 
+                onClick={confirmDuplication}
+                disabled={loading}
+                className={`flex-1 border-2 py-3 text-xs font-bold flex items-center justify-center gap-2 transition-all
+                  ${isDarkMode 
+                    ? "bg-white text-black border-white hover:bg-white/90 disabled:opacity-50" 
+                    : "bg-black text-white border-black hover:bg-black/90 disabled:opacity-50"}`}
+              >
+                {loading ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />}
+                CONFIRM_DUPLICATION
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -1,11 +1,102 @@
 # Change Summary
 
-## [2026-03-18] - Supabase Google OAuth & Admin Guard Implementation
-- Installed `@supabase/supabase-js` and `@supabase/ssr`.
-- Created Supabase utilities: `utils/supabase/client.ts`, `utils/supabase/server.ts`, and `utils/supabase/middleware.ts`.
-- Implemented `/login` page with high-contrast retro style and Google OAuth integration.
-- Created `app/auth/callback/route.ts` for OAuth code exchange.
-- Added root `middleware.ts` for session refreshing and route protection.
-- Refactored `app/page.tsx` to include an Admin Guard (Server Component).
-- Moved dashboard UI to `app/MatrixDashboardClient.tsx`.
-- Added 'Terminate Session' (Sign Out) functionality to the dashboard.
+## [2026-03-18] - Step 1: Data Integration & Typed Client
+- Created `lib/supabase.ts` initializing a typed client using `Database` from `@/types/supabase`.
+- Implemented `hooks/useAdmin.ts` for role-based authorization checking `is_superadmin` and `is_matrix_admin`.
+- Created `app/not-authorized/page.tsx` for unauthorized access handling.
+- Refactored `app/MatrixDashboardClient.tsx` to fetch real data:
+    - Sidebar: Fetches all rows from `humor_flavors` ordered by `slug`.
+    - Main Content: Fetches steps from `humor_flavor_steps` for the selected flavor, ordered by `order_by`.
+- Implemented Basic CRUD:
+    - `insertFlavor`: Insert new row into `humor_flavors`.
+    - `deleteStep`: Delete row from `humor_flavor_steps`.
+- Maintained high-contrast dark mode and monospace aesthetics.
+
+## [2026-03-18] - Step 2: Reordering Logic
+- Implemented `handleMoveStep` in `MatrixDashboardClient.tsx` for reordering flavor steps:
+    - Swap `order_by` values between adjacent steps.
+    - Synchronize with Supabase using two targeted `update()` calls.
+    - Added Optimistic UI logic to re-sort local state instantly before DB sync.
+- Refactored `MatrixDashboardClient.tsx` to extract `StepCard` component:
+    - Replaced Lucide icons with literal '↑' and '↓' for a retro-tool feel.
+    - Styled buttons with sharp borders and high contrast.
+    - Removed unused `ChevronUp` and `ChevronDown` imports.
+
+## [2026-03-18] - Step 3: AI API Integration
+- Updated `StepCard` to display `llm_user_prompt` column in a monospace, terminal-style textarea.
+- Implemented `handleGenerate` in `MatrixDashboardClient.tsx`:
+    - Collects and sorts `flavor_steps` by `order_by`.
+    - Extracts `llm_user_prompt` strings for the API payload.
+    - POSTs to `https://api.almostcrackd.ai/v1/generate` with `image_url` and `flavor_steps`.
+- Enhanced "TEST PANEL" UI:
+    - Added editable `PREVIEW_IMAGE_URL` input with real-time image preview.
+    - Created "OUTPUT_LOG" area to display raw JSON results from the API.
+    - Added loading states and system log updates for the generation process.
+    - Maintained retro, high-contrast aesthetic throughout new components.
+
+## [2026-03-18] - Step 3 Refinement: Assignment 5 Pipeline API
+- Refactored `handleGenerate` to `generateCaptions` to match Assignment 5 requirements.
+- Updated API endpoint to `https://api.almostcrackd.ai/pipeline/generate-captions`.
+- Added image URL validation with browser `alert()`.
+- Implemented HTTP 405 error handling with `Allow` header logging.
+- Renamed state variables: `apiOutput` -> `apiResponse`.
+- Switched Output Log UI from `div` to `pre` for better raw JSON formatting.
+
+## [2026-03-18] - Final Pipeline API Integration
+- Integrated `supabase.auth.getSession()` into `generateCaptions` for secure API calls.
+- Added `Authorization: Bearer <access_token>` header to the pipeline request.
+- Updated POST payload to use strict keys: `imageId` and `humorFlavorId`.
+- Implemented pre-fetch session validation with automatic redirect to `/login` for unauthenticated users.
+- Renamed `imageUrl` state and inputs to `imageId` to match the new pipeline schema.
+- Refactored results area into "GRID_LAB" with enhanced monospace styling.
+- Maintained high-contrast, sharp-bordered "Matrix Admin" aesthetic.
+
+## [2026-03-18] - New Feature: Image Captioning Dashboard
+- Created `components/ImageCaptioningDashboard.tsx`:
+    - Implemented a custom Drag & Drop zone with native React events.
+    - Designed a high-contrast "Retro/Admin" UI with monochrome styling and green accents.
+    - Built a robust 4-step pipeline (Presigned URL -> S3 Upload -> Registration -> Caption Generation).
+    - Integrated Supabase Auth for Bearer token management across all API calls.
+    - Added granular status tracking (IDLE -> GETTING PERMISSION -> UPLOADING BYTES -> REGISTERING -> GENERATING CAPTIONS).
+    - Implemented comprehensive error handling with step-specific failure reporting.
+
+## [2026-03-20] - Feature Integration: Grid Lab v5.0 & 502 Fix
+- Refactored `components/ImageCaptioningDashboard.tsx` to accept `humorFlavorId` as a prop.
+- Updated the `generate-captions` call within the dashboard to use the passed `humorFlavorId`.
+- Integrated `ImageCaptioningDashboard` into `app/MatrixDashboardClient.tsx` with a header view toggle.
+- **Fixed 502 Error Logic:**
+    - Added a Step 0.5 check to verify `humor_flavor_steps` count before execution.
+    - Implemented strict validation for `humorFlavorId` with a user-friendly alert.
+    - Added payload logging and enhanced error reporting for Step 4.
+- Cleaned up redundant pipeline logic and unused imports in `MatrixDashboardClient.tsx`.
+
+## [2026-03-21] - Audit Log Fields Integration
+- Modified `hooks/useAdmin.ts` to return the `user` object.
+- Updated `MatrixDashboardClient.tsx` to include audit log fields in all DB operations:
+    - `insertFlavor`: Added `created_by_user_id` and `modified_by_user_id`.
+    - `insertStep`: Added `created_by_user_id` and `modified_by_user_id`.
+    - `handleMoveStep`: Added `modified_by_user_id` to `update` queries.
+- Ensured `created_datetime_utc` and `modified_datetime_utc` are handled by database defaults as requested.
+
+## [2026-04-17] - New Feature: Duplicate Flavor
+- Implemented `duplicateFlavor` function in `MatrixDashboardClient.tsx`:
+    - Fetches all steps from the original flavor.
+    - Prompts user for a new slug.
+    - Inserts a new flavor row and then bulk inserts the duplicated steps.
+    - Includes audit log fields (`created_by_user_id`, `modified_by_user_id`) in all insertions.
+- Updated Sidebar UI:
+    - Added a 'Duplicate' button with a Lucide `Copy` icon for each flavor.
+    - Implemented a hover effect and high-contrast styling consistent with the "Admin Tool" aesthetic.
+- Added a success alert upon completion.
+
+## [2026-04-17] - UI Refactoring & Captions Gallery
+- Refactored `MatrixDashboardClient.tsx` header:
+    - Split "STEPS_FOR:" and flavor slug into two lines for better visual hierarchy.
+    - Moved "DUPLICATE" button from sidebar to the header next to "ADD_STEP".
+    - Added a new "CAPTIONS" button linking to a flavor-specific archive.
+- Created `app/flavors/[id]/captions/page.tsx`:
+    - Implemented a dedicated gallery view for all captions generated by a specific flavor.
+    - Designed high-contrast cards showing the source image (grayscale to color on hover) and the generated text.
+    - Integrated real-time Supabase fetching with image joins.
+    - Maintained the "Admin Tool" aesthetic with monospace fonts, sharp borders, and shadow offsets.
+- Enhanced sidebar by removing redundant icons and focusing on flavor selection.
