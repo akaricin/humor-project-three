@@ -94,13 +94,13 @@ export default function FlavorCaptionsPage() {
   const toggleTheme = () => {
     const nextDark = !isDarkMode;
     setIsDarkMode(nextDark);
-    
+    localStorage.setItem("theme", nextDark ? "dark" : "light");
+
     // Update URL without full navigation
     const params = new URLSearchParams(searchParams.toString());
     params.set("theme", nextDark ? "dark" : "light");
     router.replace(`/flavors/${id}/captions?${params.toString()}`, { scroll: false });
   };
-
   if (loading) {
     return (
       <div className="h-screen w-full bg-black flex items-center justify-center text-white font-mono">

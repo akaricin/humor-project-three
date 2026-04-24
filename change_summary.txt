@@ -1,1 +1,1 @@
-- Fixed navigation glitches and flickering in `MatrixDashboardClient.tsx` by consolidating initialization and URL parameter synchronization logic into a single `useEffect` block, eliminating race conditions.
+- Updated `app/flavors/[id]/captions/page.tsx` to save the theme preference to `localStorage` when toggling, ensuring the change is broadcasted via the `storage` event to the dashboard.

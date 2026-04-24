@@ -157,15 +157,37 @@ export default function MatrixDashboardClient() {
     sessionStorage.setItem("sidebar-scroll", e.currentTarget.scrollTop.toString());
   };
 
-  // Detect System Preference on Mount
+  // Detect System Preference or Local Storage on Mount
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    setIsDarkMode(mediaQuery.matches);
+    const updateThemeFromStorage = () => {
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme) {
+        setIsDarkMode(savedTheme === "dark");
+      }
+    };
 
-    const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    updateThemeFromStorage();
+    window.addEventListener("storage", updateThemeFromStorage);
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => {
+      if (!localStorage.getItem("theme")) {
+        setIsDarkMode(e.matches);
+      }
+    };
     mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
+    
+    return () => {
+      window.removeEventListener("storage", updateThemeFromStorage);
+      mediaQuery.removeEventListener("change", handler);
+    };
   }, []);
+
+  const toggleTheme = () => {
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    localStorage.setItem("theme", newMode ? "dark" : "light");
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -461,8 +483,6 @@ export default function MatrixDashboardClient() {
       showToast("Failed to Create Step: " + error.message, "ERROR");
     }
   };
-
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
