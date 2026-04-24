@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Sun, 
   Moon, 
@@ -16,7 +16,7 @@ import {
   Copy
 } from "lucide-react";
 import { createClient } from "../lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAdmin } from "../hooks/useAdmin";
 import { Database as DBTypes } from "../types/supabase";
 import ImageCaptioningDashboard from "../components/ImageCaptioningDashboard";
@@ -119,8 +119,21 @@ export default function MatrixDashboardClient() {
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; message: string; type: "SUCCESS" | "ERROR" }[]>([]);
   
+  const sidebarRef = useRef<HTMLElement>(null);
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const flavorIdParam = searchParams.get("flavor");
+  const viewParam = searchParams.get("view");
+  const themeParam = searchParams.get("theme");
+
+  const updateUrl = (updates: { flavor?: number; view?: string; theme?: string }) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (updates.flavor !== undefined) params.set("flavor", updates.flavor.toString());
+    if (updates.view !== undefined) params.set("view", updates.view);
+    if (updates.theme !== undefined) params.set("theme", updates.theme);
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  };
 
   const showToast = (message: string, type: "SUCCESS" | "ERROR" = "SUCCESS") => {
     const id = Date.now();
@@ -128,6 +141,20 @@ export default function MatrixDashboardClient() {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
+  };
+
+  // Restore sidebar scroll position on mount
+  useEffect(() => {
+    if (sidebarRef.current && flavors.length > 0) {
+      const savedScroll = sessionStorage.getItem("sidebar-scroll");
+      if (savedScroll) {
+        sidebarRef.current.scrollTop = parseInt(savedScroll, 10);
+      }
+    }
+  }, [flavors.length]);
+
+  const handleSidebarScroll = (e: React.UIEvent<HTMLElement>) => {
+    sessionStorage.setItem("sidebar-scroll", e.currentTarget.scrollTop.toString());
   };
 
   // Detect System Preference on Mount
@@ -152,6 +179,27 @@ export default function MatrixDashboardClient() {
     }
   }, [selectedFlavor]);
 
+  // Sync state from URL
+  useEffect(() => {
+    if (flavors.length > 0 && flavorIdParam) {
+      const flavor = flavors.find(f => f.id === Number(flavorIdParam));
+      if (flavor && flavor.id !== selectedFlavor?.id) {
+        setSelectedFlavor(flavor);
+      }
+    }
+    if (viewParam && (viewParam === "FLAVOR_EDITOR" || viewParam === "GRID_LAB")) {
+      if (viewParam !== view) {
+        setView(viewParam as any);
+      }
+    }
+    if (themeParam) {
+      const isDark = themeParam === "dark";
+      if (isDark !== isDarkMode) {
+        setIsDarkMode(isDark);
+      }
+    }
+  }, [flavorIdParam, viewParam, themeParam, flavors, selectedFlavor?.id, view, isDarkMode]);
+
   const fetchFlavors = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -161,8 +209,18 @@ export default function MatrixDashboardClient() {
     
     if (data) {
       setFlavors(data);
-      if (data.length > 0 && !selectedFlavor) {
-        setSelectedFlavor(data[0]);
+      if (data.length > 0) {
+        const flavorFromParam = flavorIdParam ? data.find(f => f.id === Number(flavorIdParam)) : null;
+        const initialFlavor = flavorFromParam || data[0];
+        setSelectedFlavor(initialFlavor);
+        
+        // Ensure URL has initial state if missing
+        if (!flavorIdParam || !viewParam) {
+          const params = new URLSearchParams(searchParams.toString());
+          if (!flavorIdParam) params.set("flavor", initialFlavor.id.toString());
+          if (!viewParam) params.set("view", view);
+          router.replace(`/?${params.toString()}`, { scroll: false });
+        }
       }
     }
     setLoading(false);
@@ -427,13 +485,20 @@ export default function MatrixDashboardClient() {
             />
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+        <nav 
+          ref={sidebarRef as any}
+          onScroll={handleSidebarScroll}
+          className="flex-1 overflow-y-auto p-4 space-y-2"
+        >
           {flavors
             .filter(f => f.slug.toLowerCase().includes(searchQuery.toLowerCase()))
             .map((flavor) => (
             <div key={flavor.id} className="group relative">
               <button
-                onClick={() => setSelectedFlavor(flavor)}
+                onClick={() => {
+                  setSelectedFlavor(flavor);
+                  updateUrl({ flavor: flavor.id });
+                }}
                 className={`w-full text-left p-3 text-sm transition-all border-2 flex items-center gap-2 truncate
                   ${selectedFlavor?.id === flavor.id 
                     ? (isDarkMode ? "bg-white text-black border-white" : "bg-black text-white border-black") 
@@ -475,7 +540,10 @@ export default function MatrixDashboardClient() {
             {/* VIEW TOGGLE (RESTORED TO HEADER) */}
             <div className={`flex border-2 ml-4 ${isDarkMode ? "border-white/20" : "border-black/20"}`}>
               <button 
-                onClick={() => setView("FLAVOR_EDITOR")}
+                onClick={() => {
+                  setView("FLAVOR_EDITOR");
+                  updateUrl({ view: "FLAVOR_EDITOR" });
+                }}
                 className={`px-4 py-1 text-[10px] font-bold transition-colors 
                   ${view === "FLAVOR_EDITOR" 
                     ? (isDarkMode ? "bg-white text-black" : "bg-black text-white") 
@@ -484,7 +552,10 @@ export default function MatrixDashboardClient() {
                 FLAVOR_EDITOR
               </button>
               <button 
-                onClick={() => setView("GRID_LAB")}
+                onClick={() => {
+                  setView("GRID_LAB");
+                  updateUrl({ view: "GRID_LAB" });
+                }}
                 className={`px-4 py-1 text-[10px] font-bold transition-colors 
                   ${view === "GRID_LAB" 
                     ? (isDarkMode ? "bg-white text-black" : "bg-black text-white") 
@@ -540,7 +611,7 @@ export default function MatrixDashboardClient() {
                         <Copy size={12} /> DUPLICATE
                       </button>
                       <button 
-                        onClick={() => selectedFlavor && router.push(`/flavors/${selectedFlavor.id}/captions`)}
+                        onClick={() => selectedFlavor && router.push(`/flavors/${selectedFlavor.id}/captions?theme=${isDarkMode ? "dark" : "light"}`)}
                         className={`px-3 py-1 border-2 flex items-center gap-2 font-bold text-[10px] tracking-widest
                         ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}>
                         <Database size={12} /> CAPTIONS

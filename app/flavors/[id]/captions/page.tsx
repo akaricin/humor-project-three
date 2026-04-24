@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "../../../utils/supabase/client";
 import { 
   ArrowLeft, 
   Loader2, 
   Image as ImageIcon,
   Terminal,
-  Database
+  Database,
+  Sun,
+  Moon
 } from "lucide-react";
 
 interface CaptionWithImage {
@@ -23,16 +25,24 @@ interface CaptionWithImage {
 export default function FlavorCaptionsPage() {
   const { id } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const themeParam = searchParams.get("theme");
+
   const [captions, setCaptions] = useState<CaptionWithImage[]>([]);
   const [flavorName, setFlavorName] = useState("");
   const [loading, setLoading] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const supabase = createClient();
 
+  // Sync theme from URL param on load
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    setIsDarkMode(mediaQuery.matches);
-  }, []);
+    if (themeParam) {
+      setIsDarkMode(themeParam === "dark");
+    } else {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      setIsDarkMode(mediaQuery.matches);
+    }
+  }, [themeParam]);
 
   useEffect(() => {
     if (id) {
@@ -81,6 +91,16 @@ export default function FlavorCaptionsPage() {
     }
   };
 
+  const toggleTheme = () => {
+    const nextDark = !isDarkMode;
+    setIsDarkMode(nextDark);
+    
+    // Update URL without full navigation
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("theme", nextDark ? "dark" : "light");
+    router.replace(`/flavors/${id}/captions?${params.toString()}`, { scroll: false });
+  };
+
   if (loading) {
     return (
       <div className="h-screen w-full bg-black flex items-center justify-center text-white font-mono">
@@ -94,13 +114,22 @@ export default function FlavorCaptionsPage() {
       
       {/* HEADER */}
       <header className="mb-12 space-y-6">
-        <button 
-          onClick={() => router.back()}
-          className={`flex items-center gap-2 px-4 py-2 border-2 font-bold text-xs transition-colors
-            ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}
-        >
-          <ArrowLeft size={14} /> RETURN_TO_MATRIX
-        </button>
+        <div className="flex items-center justify-between">
+          <button 
+            onClick={() => router.back()}
+            className={`flex items-center gap-2 px-4 py-2 border-2 font-bold text-xs transition-colors
+              ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}
+          >
+            <ArrowLeft size={14} /> RETURN_TO_MATRIX
+          </button>
+
+          <button 
+            onClick={toggleTheme}
+            className={`p-2 border-2 transition-colors ${isDarkMode ? "border-white hover:bg-white hover:text-black" : "border-black hover:bg-black hover:text-white"}`}
+          >
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center gap-3 opacity-60">
