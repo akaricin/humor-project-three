@@ -179,26 +179,40 @@ export default function MatrixDashboardClient() {
     }
   }, [selectedFlavor]);
 
-  // Sync state from URL
+  // Consolidated Initialization and URL Sync
   useEffect(() => {
-    if (flavors.length > 0 && flavorIdParam) {
-      const flavor = flavors.find(f => f.id === Number(flavorIdParam));
-      if (flavor && flavor.id !== selectedFlavor?.id) {
-        setSelectedFlavor(flavor);
-      }
+    if (!flavors.length) return;
+
+    const flavorFromParam = flavorIdParam ? flavors.find(f => f.id === Number(flavorIdParam)) : null;
+    const initialFlavor = flavorFromParam || flavors[0];
+    const initialView = (viewParam === "FLAVOR_EDITOR" || viewParam === "GRID_LAB") ? viewParam : "FLAVOR_EDITOR";
+    const initialDark = themeParam ? themeParam === "dark" : isDarkMode;
+
+    let needsUpdate = false;
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (!flavorIdParam || selectedFlavor?.id !== initialFlavor.id) {
+      setSelectedFlavor(initialFlavor);
+      params.set("flavor", initialFlavor.id.toString());
+      needsUpdate = true;
     }
-    if (viewParam && (viewParam === "FLAVOR_EDITOR" || viewParam === "GRID_LAB")) {
-      if (viewParam !== view) {
-        setView(viewParam as any);
-      }
+    
+    if (view !== initialView) {
+      setView(initialView);
+      params.set("view", initialView);
+      needsUpdate = true;
     }
-    if (themeParam) {
-      const isDark = themeParam === "dark";
-      if (isDark !== isDarkMode) {
-        setIsDarkMode(isDark);
-      }
+
+    if (isDarkMode !== initialDark) {
+      setIsDarkMode(initialDark);
+      params.set("theme", initialDark ? "dark" : "light");
+      needsUpdate = true;
     }
-  }, [flavorIdParam, viewParam, themeParam, flavors, selectedFlavor?.id, view, isDarkMode]);
+
+    if (needsUpdate) {
+      router.replace(`/?${params.toString()}`, { scroll: false });
+    }
+  }, [flavors, flavorIdParam, viewParam, themeParam]);
 
   const fetchFlavors = async () => {
     setLoading(true);
