@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import { createClient } from "../lib/supabase";
 import { 
   Upload, 
@@ -18,9 +18,10 @@ type Status = "IDLE" | "GETTING PERMISSION" | "UPLOADING BYTES" | "REGISTERING" 
 interface ImageCaptioningDashboardProps {
   humorFlavorId?: number;
   isDarkMode?: boolean;
+  showToast?: (message: string, type: "SUCCESS" | "ERROR") => void;
 }
 
-export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = true }: ImageCaptioningDashboardProps) {
+export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = true, showToast }: ImageCaptioningDashboardProps) {
   const [status, setStatus] = useState<Status>("IDLE");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stepNumber, setStepNumber] = useState<number>(0);
@@ -33,17 +34,20 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
   const handleProcessFile = async (file: File) => {
     try {
       if (!file || !file.type) {
-        alert("CRITICAL_ERROR: FILE_TYPE_UNDEFINED");
+        if (showToast) showToast("CRITICAL_ERROR: FILE_TYPE_UNDEFINED", "ERROR");
+        else alert("CRITICAL_ERROR: FILE_TYPE_UNDEFINED");
         return;
       }
 
       if (!file.type.startsWith("image/")) {
-        alert("FILE_TYPE_REJECTED: ONLY_IMAGES_ALLOWED");
+        if (showToast) showToast("FILE_TYPE_REJECTED: ONLY_IMAGES_ALLOWED", "ERROR");
+        else alert("FILE_TYPE_REJECTED: ONLY_IMAGES_ALLOWED");
         return;
       }
 
       if (!humorFlavorId) {
-        alert("Please select a humor flavor first.");
+        if (showToast) showToast("Please select a humor flavor first.", "ERROR");
+        else alert("Please select a humor flavor first.");
         return;
       }
 
@@ -57,7 +61,8 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
       setStepNumber(0);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        alert("User not logged in!");
+        if (showToast) showToast("User not logged in!", "ERROR");
+        else alert("User not logged in!");
         setStatus("IDLE");
         return;
       }
@@ -72,7 +77,8 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
       if (fetchError) throw new Error(`SUPABASE_FETCH_ERROR: ${fetchError.message}`);
       
       if (!flavorSteps || flavorSteps.length === 0) {
-        alert("Flavor has no instructions!");
+        if (showToast) showToast("Flavor has no instructions!", "ERROR");
+        else alert("Flavor has no instructions!");
         setStatus("IDLE");
         return;
       }
@@ -132,7 +138,7 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
       
       try {
         data4 = JSON.parse(rawText);
-      } catch (e) {
+      } catch {
         // If parsing fails, the AI likely returned unescaped quotes or bad formatting
         throw new Error(`MALFORMED_JSON_RESPONSE: AI_OUTPUT_IS_NOT_VALID_JSON. RAW_TEXT: "${rawText.substring(0, 150)}..."`);
       }
@@ -154,9 +160,9 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
       setCaptions(results);
       setStatus("SUCCESS");
       
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus("ERROR");
-      setErrorMessage(err.message || "UNKNOWN_PIPELINE_ERROR");
+      setErrorMessage(err instanceof Error ? err.message : "UNKNOWN_PIPELINE_ERROR");
     }
   };
 
@@ -207,8 +213,8 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
               const input = document.createElement("input");
               input.type = "file";
               input.accept = "image/*";
-              input.onchange = (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
+              input.onchange = (ev) => {
+                const file = (ev.target as HTMLInputElement).files?.[0];
                 if (file) handleProcessFile(file);
               };
               input.click();
@@ -324,7 +330,7 @@ export default function ImageCaptioningDashboard({ humorFlavorId, isDarkMode = t
                   // Safe extraction: API might return string[] or object[] with .content
                   const displayContent = typeof caption === "string" 
                     ? caption 
-                    : (caption as any)?.content || JSON.stringify(caption);
+                    : (caption as { content?: string })?.content || JSON.stringify(caption);
 
                   return (
                     <div key={i} className={`border-2 p-4 hover:border-green-500 transition-colors group flex gap-4 ${isDarkMode ? "border-white/20" : "border-black/20"}`}>

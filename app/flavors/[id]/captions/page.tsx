@@ -182,7 +182,7 @@ export default function FlavorCaptionsPage() {
                   <span className="text-[10px] font-bold tracking-widest uppercase">GENERATED_OUTPUT</span>
                 </div>
                 <p className="text-sm font-bold leading-relaxed flex-1 italic">
-                  "{cap.content || "EMPTY_RESPONSE"}"
+                  &quot;{cap.content || "EMPTY_RESPONSE"}&quot;
                 </p>
                 <div className="pt-4 border-t border-dashed opacity-30 flex justify-between items-center text-[8px] font-bold uppercase">
                   <span>{new Date(cap.created_datetime_utc).toLocaleDateString()}</span>

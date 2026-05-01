@@ -238,7 +238,7 @@ export default function MatrixDashboardClient() {
 
   const fetchFlavors = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("humor_flavors")
       .select("*")
       .order("slug");
@@ -263,7 +263,7 @@ export default function MatrixDashboardClient() {
   };
 
   const fetchSteps = async (flavorId: number) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("humor_flavor_steps")
       .select("*")
       .eq("humor_flavor_id", flavorId)
@@ -421,9 +421,9 @@ export default function MatrixDashboardClient() {
       await fetchFlavors();
       setSelectedFlavor(newFlavor);
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("DUPLICATION_FAILURE", error);
-      showToast("Duplication Failed: " + error.message, "ERROR");
+      showToast("Duplication Failed: " + (error instanceof Error ? error.message : "UNKNOWN_ERROR"), "ERROR");
     } finally {
       setLoading(false);
     }
@@ -520,7 +520,7 @@ export default function MatrixDashboardClient() {
           </div>
         </div>
         <nav 
-          ref={sidebarRef as any}
+          ref={sidebarRef}
           onScroll={handleSidebarScroll}
           className="flex-1 overflow-y-auto p-4 space-y-2"
         >
@@ -691,6 +691,7 @@ export default function MatrixDashboardClient() {
               <ImageCaptioningDashboard 
                 humorFlavorId={selectedFlavor?.id} 
                 isDarkMode={isDarkMode}
+                showToast={showToast}
               />
             </div>
           )}
